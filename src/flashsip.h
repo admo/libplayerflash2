@@ -21,17 +21,17 @@
  */
 
 /*
- * $Id: sip.h,v 1.7.2.1 2007/04/24 22:20:20 gerkey Exp $
+ * $Id: flashsip.h,v 1.7.2.1 2007/04/24 22:20:20 gerkey Exp $
  *
  * part of the P2OS parser.  methods for filling and parsing server
- * information packets (SIPs)
+ * information packets (FLASHSIPs)
  */
-#ifndef _SIP_H
-#define _SIP_H
+#ifndef _FLASHSIP_H
+#define _FLASHSIP_H
 
-#include <limits.h>
+#include <climits>
 
-#include <p2os.h>
+#include "flash.h"
 
 typedef struct ArmJoint
 {
@@ -43,14 +43,14 @@ typedef struct ArmJoint
 	unsigned char ticksPer90;
 } ArmJoint;
 
-class SIP
+class FLASHSIP
 {
  private:
   int PositionChange( unsigned short, unsigned short );
   int param_idx; // index of our robot's data in the parameter table
 
  public:
-  // these values are returned in every standard SIP
+  // these values are returned in every standard FLASHSIP
   bool lwstall, rwstall;
   unsigned char status, battery, sonarreadings, analog, digin, digout;
   unsigned short ptu, compass, timer, rawxpos;
@@ -60,7 +60,7 @@ class SIP
   int xpos, ypos;
   int x_offset,y_offset,angle_offset;
 
-  // these values are returned in a CMUcam serial string extended SIP
+  // these values are returned in a CMUcam serial string extended FLASHSIP
   // (in host byte-order)
   unsigned short blobmx, blobmy;	// Centroid
   unsigned short blobx1, blobx2, bloby1, bloby2;	// Bounding box
@@ -93,9 +93,9 @@ class SIP
   void PrintSonars();
   void PrintArm ();
   void PrintArmInfo ();
-  void Fill(player_p2os_data_t* data);
+  void Fill(player_flash_data_t* data);
 
-  SIP(int idx)
+  FLASHSIP(int idx)
   {
     param_idx = idx;
     for(int i=0;i<ARRAYSIZE(sonars);i++)

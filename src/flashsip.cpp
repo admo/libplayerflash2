@@ -21,10 +21,10 @@
  */
 
 /*
- * $Id: sip.cc,v 1.20.2.1 2007/01/31 21:18:13 gerkey Exp $
+ * $Id: flashsip.cc,v 1.20.2.1 2007/01/31 21:18:13 gerkey Exp $
  *
- * part of the P2OS parser.  methods for filling and parsing server
- * information packets (SIPs)
+ * part of the FLASH parser.  methods for filling and parsing server
+ * information packets (FLASHSIPs)
  */
 #include <stdio.h>
 #include <limits.h>
@@ -35,9 +35,9 @@
 
 #include <libplayercore/error.h>
 
-#include "sip.h"
+#include "flashsip.h"
 
-void SIP::Fill(player_p2os_data_t* data)
+void FLASHSIP::Fill(player_flash_data_t* data)
 {
   ///////////////////////////////////////////////////////////////
   // odometry
@@ -105,7 +105,7 @@ void SIP::Fill(player_p2os_data_t* data)
   // set the bits that indicate which fields we're using
   data->power.valid = PLAYER_POWER_MASK_VOLTS | PLAYER_POWER_MASK_PERCENT;
   data->power.volts = this->battery / 1e1;
-  data->power.percent = 1e2 * (data->power.volts / P2OS_NOMINAL_VOLTAGE);
+  data->power.percent = 1e2 * (data->power.volts / FLASH_NOMINAL_VOLTAGE);
 
   ///////////////////////////////////////////////////////////////
   // digital I/O
@@ -169,7 +169,7 @@ void SIP::Fill(player_p2os_data_t* data)
   }
 }
 
-int SIP::PositionChange( unsigned short from, unsigned short to ) 
+int FLASHSIP::PositionChange( unsigned short from, unsigned short to ) 
 {
   int diff1, diff2;
 
@@ -190,7 +190,7 @@ int SIP::PositionChange( unsigned short from, unsigned short to )
 
 }
 
-void SIP::Print() 
+void FLASHSIP::Print() 
 {
   int i;
 
@@ -211,11 +211,11 @@ void SIP::Print()
   printf("status: 0x%x analog: %d ", status, analog);
   printf("digin: ");
   for(i=0;i<8;i++) {
-    printf("%d", (digin >> 7-i ) & 0x01);
+    printf("%d", (digin >> (7-i) ) & 0x01);
   }
   printf(" digout: ");
   for(i=0;i<8;i++) {
-    printf("%d", (digout >> 7-i ) & 0x01);
+    printf("%d", (digout >> (7-i) ) & 0x01);
   }
   puts("");
   printf("battery: %d compass: %d sonarreadings: %d\n", battery, compass, sonarreadings);
@@ -227,7 +227,7 @@ void SIP::Print()
   PrintArm ();
 }
 
-void SIP::PrintSonars() 
+void FLASHSIP::PrintSonars() 
 {
   printf("Sonars: ");
   for(int i = 0; i < 16; i++){
@@ -236,7 +236,7 @@ void SIP::PrintSonars()
   puts("");
 }
 
-void SIP::PrintArm ()
+void FLASHSIP::PrintArm ()
 {
 	printf ("Arm power is %s\tArm is %sconnected\n", (armPowerOn ? "on" : "off"), (armConnected ? "" : "not "));
 	printf ("Arm joint status:\n");
@@ -244,7 +244,7 @@ void SIP::PrintArm ()
 		printf ("Joint %d   %s   %d\n", ii + 1, (armJointMoving[ii] ? "Moving " : "Stopped"), armJointPos[ii]);
 }
 
-void SIP::PrintArmInfo ()
+void FLASHSIP::PrintArmInfo ()
 {
 	printf ("Arm version:\t%s\n", armVersionString);
 	printf ("Arm has %d joints:\n", armNumJoints);
@@ -253,7 +253,7 @@ void SIP::PrintArmInfo ()
 		printf ("%d |\t%d\t%d\t%d\t%d\t%d\t%d\n", ii, armJoints[ii].speed, armJoints[ii].home, armJoints[ii].min, armJoints[ii].centre, armJoints[ii].max, armJoints[ii].ticksPer90);
 }
 
-void SIP::Parse( unsigned char *buffer ) 
+void FLASHSIP::Parse( unsigned char *buffer ) 
 {
   int cnt = 0, change;
   unsigned short newxpos, newypos;
@@ -261,8 +261,8 @@ void SIP::Parse( unsigned char *buffer )
   status = buffer[cnt];
   cnt += sizeof(unsigned char);
   /*
-   * Remember P2OS uses little endian: 
-   * for a 2 byte short (called integer on P2OS)
+   * Remember FLASH uses little endian: 
+   * for a 2 byte short (called integer on FLASH)
    * byte0 is low byte, byte1 is high byte
    * The following code is host-machine endian independant
    * Also we must or (|) bytes together instead of casting to a
@@ -277,8 +277,8 @@ void SIP::Parse( unsigned char *buffer )
   if (xpos!=INT_MAX) {
     change = (int) rint(PositionChange( rawxpos, newxpos ) * 
 			PlayerRobotParams[param_idx].DistConvFactor);
-    if (abs(change)>100)
-      PLAYER_WARN1("invalid odometry change [%d]; odometry values are tainted", change);
+    if (abs(change)>1000) // MODIFIED: (LM) orginal value was 100
+      PLAYER_WARN1("FLASHSIP [1]: invalid odometry change [%d]; odometry values are tainted", change);
     else
       xpos += change;
   }
@@ -293,8 +293,8 @@ void SIP::Parse( unsigned char *buffer )
   if (ypos!=INT_MAX) {
     change = (int) rint(PositionChange( rawypos, newypos ) *
 			PlayerRobotParams[param_idx].DistConvFactor);
-    if (abs(change)>100)
-      PLAYER_WARN1("invalid odometry change [%d]; odometry values are tainted", change);
+    if (abs(change)>1000) // MODIFIED: (LM) orginal value was 100
+      PLAYER_WARN1("FLASHSIP [2]: invalid odometry change [%d]; odometry values are tainted", change);
     else
       ypos += change;
   }
@@ -374,7 +374,7 @@ void SIP::Parse( unsigned char *buffer )
 }
 
 
-/** Parse a SERAUX SIP packet.  For a CMUcam, this will have blob
+/** Parse a SERAUX FLASHSIP packet.  For a CMUcam, this will have blob
  **  tracking messages in the format (all one-byte values, no spaces): 
  **
  **      255 M mx my x1 y1 x2 y2 pixels confidence  (10-bytes)
@@ -383,7 +383,7 @@ void SIP::Parse( unsigned char *buffer )
  **
  **      255 S Rval Gval Bval Rvar Gvar Bvar    (8-bytes)
  */
-void SIP::ParseSERAUX( unsigned char *buffer ) 
+void FLASHSIP::ParseSERAUX( unsigned char *buffer ) 
 {
   unsigned char type = buffer[1];
   if (type != SERAUX && type != SERAUX2)
@@ -450,7 +450,7 @@ void SIP::ParseSERAUX( unsigned char *buffer )
 // <rate> falls in [0,1023]; less than 512 is CCW rotation and greater
 // than 512 is CW
 void
-SIP::ParseGyro(unsigned char* buffer)
+FLASHSIP::ParseGyro(unsigned char* buffer)
 {
   // Get the message length (account for the type byte and the 2-byte
   // checksum)
@@ -505,7 +505,7 @@ SIP::ParseGyro(unsigned char* buffer)
   gyro_rate = average_rate;
 }
 
-void SIP::ParseArm (unsigned char *buffer)
+void FLASHSIP::ParseArm (unsigned char *buffer)
 {
 	int length = (int) buffer[0] - 2;
 
@@ -550,7 +550,7 @@ void SIP::ParseArm (unsigned char *buffer)
 	memset (armJointPosRads, 0, 6 * sizeof (double));
 }
 
-void SIP::ParseArmInfo (unsigned char *buffer)
+void FLASHSIP::ParseArmInfo (unsigned char *buffer)
 {
 	int length = (int) buffer[0] - 2;
 	if (buffer[1] != ARMINFOPAC)

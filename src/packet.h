@@ -22,8 +22,8 @@
 
 /*
  * $Id: packet.h,v 1.1 2002/11/29 17:07:43 gerkey Exp $
- *   part of the P2OS parser.  this class has methods for building,
- *   printing, sending and receiving P2OS packets.
+ *   part of the FLASH parser.  this class has methods for building,
+ *   printing, sending and receiving FLASH packets.
  *
  */
 
@@ -34,7 +34,7 @@
 
 #define PACKET_LEN 256
 
-class P2OSPacket 
+class FLASHPacket 
 {
  public:
   unsigned char packet[PACKET_LEN];
@@ -49,7 +49,7 @@ class P2OSPacket
   int Receive( int fd );
   bool Check();
   
-  bool operator!= ( P2OSPacket p ) {
+  bool operator!= ( FLASHPacket p ) {
     if ( size != p.size) return(true);
 
     if ( memcmp( packet, p.packet, size ) != 0 ) return (true);

@@ -1,7 +1,7 @@
 /*
  *  Player - One Hell of a Robot Server
  *  Copyright (C) 2000
- *     Brian Gerkey, Kasper Stoy, Richard Vaughan, & Andrew Howard
+ *     Brian Gerkey, Kasper Stoy, Richard Vaughan & Andrew Howard
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -243,7 +243,7 @@ them named:
 @verbatim
 driver
 (
-  name "p2os"
+  name "flash"
   provides ["odometry::position:0" "compass::position:1" "sonar:0" "power:0"]
 )
 @endverbatim
@@ -271,20 +271,31 @@ driver
 #include <netinet/tcp.h>
 #include <netdb.h>
 
-#include "p2os.h"
+#include "flash.h"
 
 Driver*
-P2OS_Init(ConfigFile* cf, int section)
+FLASH_Init(ConfigFile* cf, int section)
 {
-  return (Driver*)(new P2OS(cf,section));
+  return (Driver*)(new FLASH(cf,section));
 }
 
-void P2OS_Register(DriverTable* table)
+void FLASH_Register(DriverTable* table)
 {
-  table->AddDriver("p2os", P2OS_Init);
+  char name[]="flash";
+  table->AddDriver(name, FLASH_Init);
 }
 
-P2OS::P2OS(ConfigFile* cf, int section)
+extern "C" {
+  int player_driver_init(DriverTable* table) {
+    puts("FLASH driver initializing.");
+    FLASH_Register(table);
+    puts("FLASH driver done.");
+    return 0;
+  }
+}
+
+
+FLASH::FLASH(ConfigFile* cf, int section)
         : Driver(cf,section,true,PLAYER_MSGQUEUE_DEFAULT_MAXLEN)
 {
   // zero ids, so that we'll know later which interfaces were requested
@@ -306,7 +317,7 @@ P2OS::P2OS(ConfigFile* cf, int section)
   this->pulse = -1;
 
   // intialise members
-  sippacket = NULL;
+  flashsippacket = NULL;
 
   // Do we create a robot position interface?
   if(cf->ReadDeviceAddr(&(this->position_id), section, "provides",
@@ -473,11 +484,11 @@ P2OS::P2OS(ConfigFile* cf, int section)
   this->trans_kv = cf->ReadInt(section, "trans_kv", -1);
   this->trans_ki = cf->ReadInt(section, "trans_ki", -1);
 
-  this->psos_serial_port = cf->ReadString(section,"port",DEFAULT_P2OS_PORT);
+  this->psos_serial_port = cf->ReadString(section,"port",DEFAULT_FLASH_PORT);
   //this->psos_use_tcp = cf->ReadBool(section, "use_tcp", false); // TODO after ReadBool added
   this->psos_use_tcp = cf->ReadInt(section, "use_tcp", 0);
-  this->psos_tcp_host = cf->ReadString(section, "tcp_remote_host", DEFAULT_P2OS_TCP_REMOTE_HOST);
-  this->psos_tcp_port = cf->ReadInt(section, "tcp_remote_port", DEFAULT_P2OS_TCP_REMOTE_PORT);
+  this->psos_tcp_host = cf->ReadString(section, "tcp_remote_host", DEFAULT_FLASH_TCP_REMOTE_HOST);
+  this->psos_tcp_port = cf->ReadInt(section, "tcp_remote_port", DEFAULT_FLASH_TCP_REMOTE_PORT);
   this->radio_modemp = cf->ReadInt(section, "radio", 0);
   this->joystickp = cf->ReadInt(section, "joystick", 0);
   this->direct_wheel_vel_control =
@@ -531,20 +542,21 @@ P2OS::P2OS(ConfigFile* cf, int section)
   memset (&last_actarray_home_cmd, 0, sizeof (player_actarray_home_cmd_t));
 }
 
-int P2OS::Setup()
+int FLASH::Setup()
 {
   int i;
   // this is the order in which we'll try the possible baud rates. we try 9600
   // first because most robots use it, and because otherwise the radio modem
   // connection code might not work (i think that the radio modems operate at
   // 9600).
-  int bauds[] = {B9600, B38400, B19200, B115200, B57600};
+  //int bauds[] = {B9600, B38400, B19200, B115200, B57600};
+  int bauds[] = {B57600};
   int numbauds = sizeof(bauds);
   int currbaud = 0;
 
   struct termios term;
   unsigned char command;
-  P2OSPacket packet, receivedpacket;
+  FLASHPacket packet, receivedpacket;
   int flags;
   bool sent_close = false;
   enum
@@ -566,11 +578,11 @@ int P2OS::Setup()
 
     // TCP socket:
 
-    printf("P2OS connecting to remote host (%s:%d)... ", this->psos_tcp_host, this->psos_tcp_port);
+    printf("FLASH connecting to remote host (%s:%d)... ", this->psos_tcp_host, this->psos_tcp_port);
     fflush(stdout);
     if( (this->psos_fd = socket(PF_INET, SOCK_STREAM, 0)) < 0)
     {
-      perror("P2OS::Setup():socket():");
+      perror("FLASH::Setup():socket():");
       return(1);
     }
     //printf("created socket %d.\nLooking up hostname...\n", this->psos_fd);
@@ -591,13 +603,13 @@ int P2OS::Setup()
     fflush(stdout);
     if(connect(this->psos_fd, (struct sockaddr*) &addr, sizeof(addr)) < 0)
     {
-      perror("Error Connecting to remote host (P2OS::Setup()::connect()):");
+      perror("Error Connecting to remote host (FLASH::Setup()::connect()):");
       return(1);
     }
     fcntl(this->psos_fd, F_SETFL, O_SYNC | O_NONBLOCK);
     if((flags = fcntl(this->psos_fd, F_GETFL)) < 0)
     {
-      perror("P2OS::Setup():fcntl()");
+      perror("FLASH::Setup():fcntl()");
       close(this->psos_fd);
       this->psos_fd = -1;
       return(1);
@@ -611,19 +623,19 @@ int P2OS::Setup()
 
     // Serial port:
 
-    printf("P2OS connection opening serial port %s...",this->psos_serial_port);
+    printf("FLASH connection opening serial port %s...",this->psos_serial_port);
     fflush(stdout);
 
     if((this->psos_fd = open(this->psos_serial_port,
                      O_RDWR | O_SYNC | O_NONBLOCK, S_IRUSR | S_IWUSR )) < 0 )
     {
-      perror("P2OS::Setup():open():");
+      perror("FLASH::Setup():open():");
       return(1);
     }
 
     if(tcgetattr( this->psos_fd, &term ) < 0 )
     {
-      perror("P2OS::Setup():tcgetattr():");
+      perror("FLASH::Setup():tcgetattr():");
       close(this->psos_fd);
       this->psos_fd = -1;
       return(1);
@@ -665,7 +677,7 @@ int P2OS::Setup()
                /* Clean the modem line and activate new port  settings */
                tcflush(this->psos_fd, TCIOFLUSH);
                if (tcsetattr(this->psos_fd, TCSANOW, &term) < 0) {
-                       perror("P2OS::Setup():tcsetattr()");
+                       perror("FLASH::Setup():tcsetattr()");
                        close(this->psos_fd);
                        this->psos_fd = -1;
                        return(1);
@@ -673,7 +685,7 @@ int P2OS::Setup()
 #else
     if(tcsetattr(this->psos_fd, TCSAFLUSH, &term ) < 0)
     {
-      perror("P2OS::Setup():tcsetattr():");
+      perror("FLASH::Setup():tcsetattr():");
       close(this->psos_fd);
       this->psos_fd = -1;
       return(1);
@@ -681,7 +693,7 @@ int P2OS::Setup()
 
     if(tcflush(this->psos_fd, TCIOFLUSH ) < 0)
     {
-      perror("P2OS::Setup():tcflush():");
+      perror("FLASH::Setup():tcflush():");
       close(this->psos_fd);
       this->psos_fd = -1;
       return(1);
@@ -689,7 +701,7 @@ int P2OS::Setup()
 
     if((flags = fcntl(this->psos_fd, F_GETFL)) < 0)
     {
-      perror("P2OS::Setup():fcntl()");
+      perror("FLASH::Setup():fcntl()");
       close(this->psos_fd);
       this->psos_fd = -1;
       return(1);
@@ -765,7 +777,7 @@ int P2OS::Setup()
         }
       }
     }
-    printf("Connected to robot device, handshaking with P2OS...");
+    printf("Connected to robot device, handshaking with FLASH...");
     fflush(stdout);
   }// end TCP socket or serial port.
 
@@ -780,13 +792,13 @@ int P2OS::Setup()
         command = SYNC0;
         packet.Build(&command, 1);
         packet.Send(this->psos_fd);
-        usleep(P2OS_CYCLETIME_USEC);
+        usleep(FLASH_CYCLETIME_USEC);
         break;
       case AFTER_FIRST_SYNC:
         printf("turning off NONBLOCK mode...\n");
         if(fcntl(this->psos_fd, F_SETFL, flags ^ O_NONBLOCK) < 0)
         {
-          perror("P2OS::Setup():fcntl()");
+          perror("FLASH::Setup():fcntl()");
           close(this->psos_fd);
           this->psos_fd = -1;
           return(1);
@@ -801,17 +813,17 @@ int P2OS::Setup()
         packet.Send(this->psos_fd);
         break;
       default:
-        puts("P2OS::Setup():shouldn't be here...");
+        puts("FLASH::Setup():shouldn't be here...");
         break;
     }
-    usleep(P2OS_CYCLETIME_USEC);
+    usleep(FLASH_CYCLETIME_USEC);
 
     if(receivedpacket.Receive(this->psos_fd))
     {
       if((psos_state == NO_SYNC) && (num_sync_attempts >= 0))
       {
         num_sync_attempts--;
-        usleep(P2OS_CYCLETIME_USEC);
+        usleep(FLASH_CYCLETIME_USEC);
         continue;
       }
       else
@@ -823,7 +835,7 @@ int P2OS::Setup()
           cfsetospeed(&term, bauds[currbaud]);
           if( tcsetattr(this->psos_fd, TCSAFLUSH, &term ) < 0 )
           {
-            perror("P2OS::Setup():tcsetattr():");
+            perror("FLASH::Setup():tcsetattr():");
             close(this->psos_fd);
             this->psos_fd = -1;
             return(1);
@@ -831,7 +843,7 @@ int P2OS::Setup()
 
           if(tcflush(this->psos_fd, TCIOFLUSH ) < 0 )
           {
-            perror("P2OS::Setup():tcflush():");
+            perror("FLASH::Setup():tcflush():");
             close(this->psos_fd);
             this->psos_fd = -1;
             return(1);
@@ -859,7 +871,7 @@ int P2OS::Setup()
         psos_state = READY;
         break;
       default:
-        // maybe P2OS is still running from last time.  let's try to CLOSE
+        // maybe FLASH is still running from last time.  let's try to CLOSE
         // and reconnect
         if(!sent_close)
         {
@@ -868,19 +880,19 @@ int P2OS::Setup()
           packet.Build( &command, 1);
           packet.Send(this->psos_fd);
           sent_close = true;
-          usleep(2*P2OS_CYCLETIME_USEC);
+          usleep(2*FLASH_CYCLETIME_USEC);
           tcflush(this->psos_fd,TCIFLUSH);
           psos_state = NO_SYNC;
         }
         break;
     }
-    usleep(P2OS_CYCLETIME_USEC);
+    usleep(FLASH_CYCLETIME_USEC);
   }
 
   if(psos_state != READY)
   {
     if(this->psos_use_tcp)
-    printf("Couldn't synchronize with P2OS.\n"
+    printf("Couldn't synchronize with FLASH.\n"
            "  Most likely because the robot is not connected %s %s\n",
            this->psos_use_tcp ? "to the ethernet-serial bridge device " : "to the serial port",
            this->psos_use_tcp ? this->psos_tcp_host : this->psos_serial_port);
@@ -901,12 +913,12 @@ int P2OS::Setup()
   command = OPEN;
   packet.Build(&command, 1);
   packet.Send(this->psos_fd);
-  usleep(P2OS_CYCLETIME_USEC);
+  usleep(FLASH_CYCLETIME_USEC);
 
   command = PULSE;
   packet.Build(&command, 1);
   packet.Send(this->psos_fd);
-  usleep(P2OS_CYCLETIME_USEC);
+  usleep(FLASH_CYCLETIME_USEC);
 
   printf("Done.\n   Connected to %s, a %s %s\n", name, type, subtype);
 
@@ -922,20 +934,20 @@ int P2OS::Setup()
   }
   if(i == PLAYER_NUM_ROBOT_TYPES)
   {
-    fputs("P2OS: Warning: couldn't find parameters for this robot; "
+    fputs("FLASH: Warning: couldn't find parameters for this robot; "
             "using defaults\n",stderr);
     param_idx = 0;
   }
 
   // first, receive a packet so we know we're connected.
-  if(!this->sippacket)
-    this->sippacket = new SIP(param_idx);
+  if(!this->flashsippacket)
+    this->flashsippacket = new FLASHSIP(param_idx);
 
-  this->sippacket->x_offset = 0;
-  this->sippacket->y_offset = 0;
-  this->sippacket->angle_offset = 0;
+  this->flashsippacket->x_offset = 0;
+  this->flashsippacket->y_offset = 0;
+  this->flashsippacket->angle_offset = 0;
 
-  SendReceive((P2OSPacket*)NULL,false);
+  SendReceive((FLASHPacket*)NULL,false);
 
   // turn off the sonars at first
   this->ToggleSonarPower(0);
@@ -943,7 +955,7 @@ int P2OS::Setup()
   if(this->joystickp)
   {
     // enable joystick control
-    P2OSPacket js_packet;
+    FLASHPacket js_packet;
     unsigned char js_command[4];
     js_command[0] = JOYDRIVE;
     js_command[1] = ARGINT;
@@ -959,7 +971,7 @@ int P2OS::Setup()
   if(this->gyro_id.interf)
   {
     // request that gyro data be sent each cycle
-    P2OSPacket gyro_packet;
+    FLASHPacket gyro_packet;
     unsigned char gyro_command[4];
     gyro_command[0] = GYRO;
     gyro_command[1] = ARGINT;
@@ -972,7 +984,7 @@ int P2OS::Setup()
   if (this->actarray_id.interf)
   {
     // Start a continuous stream of ARMpac packets
-    P2OSPacket aaPacket;
+    FLASHPacket aaPacket;
     unsigned char aaCmd[4];
     aaCmd[0] = ARM_STATUS;
     aaCmd[1] = ARGINT;
@@ -987,7 +999,7 @@ int P2OS::Setup()
   }
 
   // if requested, set max accel/decel limits
-  P2OSPacket accel_packet;
+  FLASHPacket accel_packet;
   unsigned char accel_command[4];
   if(this->motor_max_trans_accel > 0)
   {
@@ -1029,7 +1041,7 @@ int P2OS::Setup()
 
 
   // if requested, change PID settings
-  P2OSPacket pid_packet;
+  FLASHPacket pid_packet;
   unsigned char pid_command[4];
   if(this->rot_kp >= 0)
   {
@@ -1100,7 +1112,7 @@ int P2OS::Setup()
     else
     {
       PLAYER_MSG1(1, "setting bumpstall to %d", this->bumpstall);
-      P2OSPacket bumpstall_packet;;
+      FLASHPacket bumpstall_packet;;
       unsigned char bumpstall_command[4];
       bumpstall_command[0] = BUMP_STALL;
       bumpstall_command[1] = ARGINT;
@@ -1126,10 +1138,10 @@ int P2OS::Setup()
   return(0);
 }
 
-int P2OS::Shutdown()
+int FLASH::Shutdown()
 {
   unsigned char command[20],buffer[20];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   memset(buffer,0,20);
 
@@ -1141,23 +1153,23 @@ int P2OS::Shutdown()
   command[0] = STOP;
   packet.Build(command, 1);
   packet.Send(this->psos_fd);
-  usleep(P2OS_CYCLETIME_USEC);
+  usleep(FLASH_CYCLETIME_USEC);
 
   command[0] = CLOSE;
   packet.Build(command, 1);
   packet.Send(this->psos_fd);
-  usleep(P2OS_CYCLETIME_USEC);
+  usleep(FLASH_CYCLETIME_USEC);
 
   close(this->psos_fd);
   this->psos_fd = -1;
-  puts("P2OS has been shutdown");
-  delete this->sippacket;
-  this->sippacket = NULL;
+  puts("FLASH has been shutdown");
+  delete this->flashsippacket;
+  this->flashsippacket = NULL;
 
   return(0);
 }
 
-P2OS::~P2OS (void)
+FLASH::~FLASH (void)
 {
   if (kineCalc)
   {
@@ -1167,7 +1179,7 @@ P2OS::~P2OS (void)
 }
 
 int
-P2OS::Subscribe(player_devaddr_t id)
+FLASH::Subscribe(player_devaddr_t id)
 {
   int setupResult;
 
@@ -1191,7 +1203,7 @@ P2OS::Subscribe(player_devaddr_t id)
 }
 
 int
-P2OS::Unsubscribe(player_devaddr_t id)
+FLASH::Unsubscribe(player_devaddr_t id)
 {
   int shutdownResult;
 
@@ -1227,7 +1239,7 @@ P2OS::Unsubscribe(player_devaddr_t id)
 }
 
 void
-P2OS::PutData(void)
+FLASH::PutData(void)
 {
   // TODO: something smarter about timestamping.
 
@@ -1235,7 +1247,7 @@ P2OS::PutData(void)
   this->Publish(this->position_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_POSITION2D_DATA_STATE,
-                (void*)&(this->p2os_data.position),
+                (void*)&(this->flash_data.position),
                 sizeof(player_position2d_data_t),
                 NULL);
 
@@ -1243,7 +1255,7 @@ P2OS::PutData(void)
   this->Publish(this->sonar_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_SONAR_DATA_RANGES,
-                (void*)&(this->p2os_data.sonar),
+                (void*)&(this->flash_data.sonar),
                 sizeof(player_sonar_data_t),
                 NULL);
 
@@ -1251,7 +1263,7 @@ P2OS::PutData(void)
   this->Publish(this->aio_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_AIO_DATA_STATE,
-                (void*)&(this->p2os_data.aio),
+                (void*)&(this->flash_data.aio),
                 sizeof(player_aio_data_t),
                 NULL);
 
@@ -1259,7 +1271,7 @@ P2OS::PutData(void)
   this->Publish(this->dio_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_DIO_DATA_VALUES,
-                (void*)&(this->p2os_data.dio),
+                (void*)&(this->flash_data.dio),
                 sizeof(player_dio_data_t),
                 NULL);
 
@@ -1267,7 +1279,7 @@ P2OS::PutData(void)
   this->Publish(this->gripper_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_GRIPPER_DATA_STATE,
-                (void*)&(this->p2os_data.gripper),
+                (void*)&(this->flash_data.gripper),
                 sizeof(player_gripper_data_t),
                 NULL);
 
@@ -1275,7 +1287,7 @@ P2OS::PutData(void)
   this->Publish(this->bumper_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_BUMPER_DATA_STATE,
-                (void*)&(this->p2os_data.bumper),
+                (void*)&(this->flash_data.bumper),
                 sizeof(player_bumper_data_t),
                 NULL);
 
@@ -1283,7 +1295,7 @@ P2OS::PutData(void)
   this->Publish(this->power_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_POWER_DATA_STATE,
-                (void*)&(this->p2os_data.power),
+                (void*)&(this->flash_data.power),
                 sizeof(player_power_data_t),
                 NULL);
 
@@ -1291,7 +1303,7 @@ P2OS::PutData(void)
   this->Publish(this->compass_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_POSITION2D_DATA_STATE,
-                (void*)&(this->p2os_data.compass),
+                (void*)&(this->flash_data.compass),
                 sizeof(player_position2d_data_t),
                 NULL);
 
@@ -1299,7 +1311,7 @@ P2OS::PutData(void)
   this->Publish(this->gyro_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_POSITION2D_DATA_STATE,
-                (void*)&(this->p2os_data.gyro),
+                (void*)&(this->flash_data.gyro),
                 sizeof(player_position2d_data_t),
                 NULL);
 
@@ -1307,7 +1319,7 @@ P2OS::PutData(void)
   this->Publish(this->blobfinder_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_BLOBFINDER_DATA_BLOBS,
-                (void*)&(this->p2os_data.blobfinder),
+                (void*)&(this->flash_data.blobfinder),
                 sizeof(player_blobfinder_data_t),
                 NULL);
 
@@ -1315,7 +1327,7 @@ P2OS::PutData(void)
   this->Publish(this->actarray_id, NULL,
                 PLAYER_MSGTYPE_DATA,
                 PLAYER_ACTARRAY_DATA_STATE,
-                (void*)&(this->p2os_data.actarray),
+                (void*)&(this->flash_data.actarray),
                 sizeof(player_actarray_data_t),
                 NULL);
 
@@ -1329,7 +1341,7 @@ P2OS::PutData(void)
 }
 
 void
-P2OS::Main()
+FLASH::Main()
 {
   int last_sonar_subscrcount=0;
   int last_position_subscrcount=0;
@@ -1339,6 +1351,7 @@ P2OS::Main()
 
   for(;;)
   {
+    usleep(100000);
     pthread_testcancel();
 
     // we want to turn on the sonars if someone just subscribed, and turn
@@ -1381,7 +1394,7 @@ P2OS::Main()
       GlobalTime->GetTime(&now_tv);
       if (now_tv.tv_sec > lastblob_tv.tv_sec)
       {
-        P2OSPacket cam_packet;
+        FLASHPacket cam_packet;
         unsigned char cam_command[4];
 
         cam_command[0] = GETAUX2;
@@ -1422,7 +1435,7 @@ P2OS::Main()
     else
     {
       // Hack fix to get around the fact that if no commands are sent to the robot via SendReceive,
-      // the driver will never read SIP packets and so never send data back to clients.
+      // the driver will never read FLASHSIP packets and so never send data back to clients.
       // We need a better way of doing regular checks of the serial port - peek in sendreceive, maybe?
       // Because if there is no data waiting this will sit around waiting until one comes
       SendReceive (NULL, true);
@@ -1430,16 +1443,16 @@ P2OS::Main()
   }
 }
 
-/* send the packet, then receive and parse an SIP */
+/* send the packet, then receive and parse an FLASHSIP */
 int
-P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
+FLASH::SendReceive(FLASHPacket* pkt, bool publish_data)
 {
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   // zero the combined data buffer.  it will be filled with the latest data
-  // by SIP::Fill()
-  memset(&(this->p2os_data),0,sizeof(player_p2os_data_t));
-  if((this->psos_fd >= 0) && this->sippacket)
+  // by FLASHSIP::Fill()
+  memset(&(this->flash_data),0,sizeof(player_flash_data_t));
+  if((this->psos_fd >= 0) && this->flashsippacket)
   {
     if(pkt)
       pkt->Send(this->psos_fd);
@@ -1459,8 +1472,8 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
     {
 
       /* It is a server packet, so process it */
-      this->sippacket->Parse( &packet.packet[3] );
-      this->sippacket->Fill(&(this->p2os_data));
+      this->flashsippacket->Parse( &packet.packet[3] );
+      this->flashsippacket->Fill(&(this->flash_data));
 
       if(publish_data)
         this->PutData();
@@ -1476,19 +1489,19 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
       // This is an AUX2 serial packet
       if(blobfinder_id.interf)
       {
-        /* It is an extended SIP (blobfinder) packet, so process it */
+        /* It is an extended FLASHSIP (blobfinder) packet, so process it */
         /* Be sure to pass data size too (packet[2])! */
-        this->sippacket->ParseSERAUX( &packet.packet[2] );
-        this->sippacket->Fill(&(this->p2os_data));
+        this->flashsippacket->ParseSERAUX( &packet.packet[2] );
+        this->flashsippacket->Fill(&(this->flash_data));
 
         if(publish_data)
           this->PutData();
 
-        P2OSPacket cam_packet;
+        FLASHPacket cam_packet;
         unsigned char cam_command[4];
 
         /* We cant get the entire contents of the buffer,
-        ** and we cant just have P2OS send us the buffer on a regular basis.
+        ** and we cant just have FLASH send us the buffer on a regular basis.
         ** My solution is to flush the buffer and then request exactly
         ** CMUCAM_MESSAGE_LEN * 2 -1 bytes of data.  This ensures that
         ** we will get exactly one full message, and it will be "current"
@@ -1529,14 +1542,14 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
       if(this->gyro_id.interf)
       {
         /* It's a set of gyro measurements */
-        this->sippacket->ParseGyro(&packet.packet[2]);
-        this->sippacket->Fill(&(this->p2os_data));
+        this->flashsippacket->ParseGyro(&packet.packet[2]);
+        this->flashsippacket->Fill(&(this->flash_data));
         if(publish_data)
           this->PutData();
 
         /* Now, the manual says that we get one gyro packet each cycle,
-         * right before the standard SIP.  So, we'll call SendReceive()
-         * again (with no packet to send) to get the standard SIP.  There's
+         * right before the standard FLASHSIP.  So, we'll call SendReceive()
+         * again (with no packet to send) to get the standard FLASHSIP.  There's
          * a definite danger of infinite recursion here if the manual
          * is wrong.
          */
@@ -1554,13 +1567,13 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
       {
         // ARMpac - current arm status
         double joints[6];
-        sippacket->ParseArm (&packet.packet[2]);
+        flashsippacket->ParseArm (&packet.packet[2]);
         for (int ii = 0; ii < 6; ii++)
         {
-          sippacket->armJointPosRads[ii] = TicksToRadians (ii, sippacket->armJointPos[ii]);
-          joints[ii] = sippacket->armJointPosRads[ii];
+          flashsippacket->armJointPosRads[ii] = TicksToRadians (ii, flashsippacket->armJointPos[ii]);
+          joints[ii] = flashsippacket->armJointPosRads[ii];
         }
-        sippacket->Fill(&p2os_data);
+        flashsippacket->Fill(&flash_data);
         if(kineCalc)
         {
           kineCalc->CalculateFK (joints);
@@ -1575,8 +1588,8 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
           limb_data.orientation.pz = kineCalc->GetO ().z;
           if (limb_data.state != PLAYER_LIMB_STATE_OOR && limb_data.state != PLAYER_LIMB_STATE_COLL)
           {
-            if (sippacket->armJointMoving[0] || sippacket->armJointMoving[1] || sippacket->armJointMoving[2] ||
-                sippacket->armJointMoving[3] || sippacket->armJointMoving[4])
+            if (flashsippacket->armJointMoving[0] || flashsippacket->armJointMoving[1] || flashsippacket->armJointMoving[2] ||
+                flashsippacket->armJointMoving[3] || flashsippacket->armJointMoving[4])
             {
               limb_data.state = PLAYER_LIMB_STATE_MOVING;
             }
@@ -1587,7 +1600,7 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
       }
       if(publish_data)
         this->PutData();
-      // Go for another SIP - there had better be one or things will probably go boom
+      // Go for another FLASHSIP - there had better be one or things will probably go boom
       SendReceive(NULL,publish_data);
     }
     else if (packet.packet[0] == 0xFA && packet.packet[1] == 0xFB && packet.packet[3] == ARMINFOPAC)
@@ -1595,13 +1608,13 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
       // ARMINFOpac - arm configuration stuff
       if (actarray_id.interf)
       {
-        sippacket->ParseArmInfo (&packet.packet[2]);
+        flashsippacket->ParseArmInfo (&packet.packet[2]);
         // Update the KineCalc with the new info for joints - one would assume this doesn't change, though...
         if (kineCalc)
         {
           for (int ii = 0; ii < 5; ii++)
-            kineCalc->SetJointRange (ii, TicksToRadians (ii, sippacket->armJoints[ii].min), TicksToRadians (ii, sippacket->armJoints[ii].max));
-          // Go for another SIP - there had better be one or things will probably go boom
+            kineCalc->SetJointRange (ii, TicksToRadians (ii, flashsippacket->armJoints[ii].min), TicksToRadians (ii, flashsippacket->armJoints[ii].max));
+          // Go for another FLASHSIP - there had better be one or things will probably go boom
         }
         SendReceive(NULL,publish_data);
       }
@@ -1615,20 +1628,20 @@ P2OS::SendReceive(P2OSPacket* pkt, bool publish_data)
 }
 
 void
-P2OS::ResetRawPositions()
+FLASH::ResetRawPositions()
 {
-  P2OSPacket pkt;
-  unsigned char p2oscommand[4];
+  FLASHPacket pkt;
+  unsigned char flashcommand[4];
 
-  if(this->sippacket)
+  if(this->flashsippacket)
   {
-    this->sippacket->rawxpos = 0;
-    this->sippacket->rawypos = 0;
-    this->sippacket->xpos = 0;
-    this->sippacket->ypos = 0;
-    p2oscommand[0] = SETO;
-    p2oscommand[1] = ARGINT;
-    pkt.Build(p2oscommand, 2);
+    this->flashsippacket->rawxpos = 0;
+    this->flashsippacket->rawypos = 0;
+    this->flashsippacket->xpos = 0;
+    this->flashsippacket->ypos = 0;
+    flashcommand[0] = SETO;
+    flashcommand[1] = ARGINT;
+    pkt.Build(flashcommand, 2);
     this->SendReceive(&pkt,false);
   }
 }
@@ -1639,11 +1652,11 @@ P2OS::ResetRawPositions()
 ** setting interface output mode to raw.  It also restarts
 ** tracking output (current mode)
 ****************************************************************/
-void P2OS::CMUcamReset(bool doLock)
+void FLASH::CMUcamReset(bool doLock)
 {
   CMUcamStopTracking(doLock); // Stop the current tracking.
 
-  P2OSPacket cam_packet;
+  FLASHPacket cam_packet;
   unsigned char cam_command[8];
 
   printf("Resetting the CMUcam...\n");
@@ -1684,13 +1697,13 @@ void P2OS::CMUcamReset(bool doLock)
 **   2) with auto tracking (-1 argument)
 **   3) with current values (0 or no arguments)
 ****************************************************************/
-void P2OS::CMUcamTrack(int rmin, int rmax,
+void FLASH::CMUcamTrack(int rmin, int rmax,
                        int gmin, int gmax,
                        int bmin, int bmax)
 {
   this->CMUcamStopTracking(); // Stop the current tracking.
 
-  P2OSPacket cam_packet;
+  FLASHPacket cam_packet;
   unsigned char cam_command[50];
 
   if (!rmin && !rmax && !gmin && !gmax && !bmin && !bmax)
@@ -1732,9 +1745,9 @@ void P2OS::CMUcamTrack(int rmin, int rmax,
 /****************************************************************
 ** Start Tracking - with last config
 ****************************************************************/
-void P2OS::CMUcamStartTracking(bool doLock)
+void FLASH::CMUcamStartTracking(bool doLock)
 {
-   P2OSPacket cam_packet;
+   FLASHPacket cam_packet;
    unsigned char cam_command[50];
 
     // Then start it up with current values.
@@ -1751,9 +1764,9 @@ void P2OS::CMUcamStartTracking(bool doLock)
 ** Stop Tracking - This should be done before any new command
 ** are issued to the CMUcam.
 ****************************************************************/
-void P2OS::CMUcamStopTracking(bool doLock)
+void FLASH::CMUcamStopTracking(bool doLock)
 {
-  P2OSPacket cam_packet;
+  FLASHPacket cam_packet;
   unsigned char cam_command[50];
 
   // First we must STOP tracking.  Just send a return.
@@ -1767,10 +1780,10 @@ void P2OS::CMUcamStopTracking(bool doLock)
 
 /* toggle sonars on/off, according to val */
 void
-P2OS::ToggleSonarPower(unsigned char val)
+FLASH::ToggleSonarPower(unsigned char val)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command[0] = SONAR;
   command[1] = ARGINT;
@@ -1782,10 +1795,10 @@ P2OS::ToggleSonarPower(unsigned char val)
 
 /* toggle motors on/off, according to val */
 void
-P2OS::ToggleMotorPower(unsigned char val)
+FLASH::ToggleMotorPower(unsigned char val)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command[0] = ENABLE;
   command[1] = ARGINT;
@@ -1800,14 +1813,14 @@ P2OS::ToggleMotorPower(unsigned char val)
 /////////////////////////////////////////////////////
 
 // Ticks to degrees from the ARIA software
-inline double P2OS::TicksToDegrees (int joint, unsigned char ticks)
+inline double FLASH::TicksToDegrees (int joint, unsigned char ticks)
 {
-  if ((joint < 0) || (joint >= sippacket->armNumJoints))
+  if ((joint < 0) || (joint >= flashsippacket->armNumJoints))
     return 0;
 
   double result;
-  int pos = ticks - sippacket->armJoints[joint].centre;
-  result = 90.0 / static_cast<double> (sippacket->armJoints[joint].ticksPer90);
+  int pos = ticks - flashsippacket->armJoints[joint].centre;
+  result = 90.0 / static_cast<double> (flashsippacket->armJoints[joint].ticksPer90);
   result = result * pos;
   if ((joint >= 0) && (joint <= 2))
     result = -result;
@@ -1816,43 +1829,43 @@ inline double P2OS::TicksToDegrees (int joint, unsigned char ticks)
 }
 
 // Degrees to ticks from the ARIA software
-inline unsigned char P2OS::DegreesToTicks (int joint, double degrees)
+inline unsigned char FLASH::DegreesToTicks (int joint, double degrees)
 {
   double val;
 
-  if ((joint < 0) || (joint >= sippacket->armNumJoints))
+  if ((joint < 0) || (joint >= flashsippacket->armNumJoints))
     return 0;
 
-  val = static_cast<double> (sippacket->armJoints[joint].ticksPer90) * degrees / 90.0;
+  val = static_cast<double> (flashsippacket->armJoints[joint].ticksPer90) * degrees / 90.0;
   val = round (val);
   if ((joint >= 0) && (joint <= 2))
     val = -val;
-  val += sippacket->armJoints[joint].centre;
+  val += flashsippacket->armJoints[joint].centre;
 
-  if (val < sippacket->armJoints[joint].min)
-    return sippacket->armJoints[joint].min;
-  else if (val > sippacket->armJoints[joint].max)
-    return sippacket->armJoints[joint].max;
+  if (val < flashsippacket->armJoints[joint].min)
+    return flashsippacket->armJoints[joint].min;
+  else if (val > flashsippacket->armJoints[joint].max)
+    return flashsippacket->armJoints[joint].max;
   else
     return static_cast<int> (round (val));
 }
 
-inline double P2OS::TicksToRadians (int joint, unsigned char ticks)
+inline double FLASH::TicksToRadians (int joint, unsigned char ticks)
 {
   double result = DTOR (TicksToDegrees (joint, ticks));
   return result;
 }
 
-inline unsigned char P2OS::RadiansToTicks (int joint, double rads)
+inline unsigned char FLASH::RadiansToTicks (int joint, double rads)
 {
   unsigned char result = static_cast<unsigned char> (DegreesToTicks (joint, RTOD (rads)));
   return result;
 }
 
-inline double P2OS::RadsPerSectoSecsPerTick (int joint, double speed)
+inline double FLASH::RadsPerSectoSecsPerTick (int joint, double speed)
 {
   double degs = RTOD (speed);
-  double ticksPerDeg = static_cast<double> (sippacket->armJoints[joint].ticksPer90) / 90.0f;
+  double ticksPerDeg = static_cast<double> (flashsippacket->armJoints[joint].ticksPer90) / 90.0f;
   double ticksPerSec = degs * ticksPerDeg;
   double secsPerTick = 1000.0f / ticksPerSec;
 
@@ -1863,20 +1876,20 @@ inline double P2OS::RadsPerSectoSecsPerTick (int joint, double speed)
   return secsPerTick;
 }
 
-inline double P2OS::SecsPerTicktoRadsPerSec (int joint, double msecs)
+inline double FLASH::SecsPerTicktoRadsPerSec (int joint, double msecs)
 {
   double ticksPerSec = 1.0 / (static_cast<double> (msecs) / 1000.0);
-  double ticksPerDeg = static_cast<double> (sippacket->armJoints[joint].ticksPer90) / 90.0f;
+  double ticksPerDeg = static_cast<double> (flashsippacket->armJoints[joint].ticksPer90) / 90.0f;
   double degs = ticksPerSec / ticksPerDeg;
   double rads = DTOR (degs);
 
   return rads;
 }
 
-void P2OS::ToggleActArrayPower (unsigned char value, bool lock)
+void FLASH::ToggleActArrayPower (unsigned char value, bool lock)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command[0] = ARM_POWER;
   command[1] = ARGINT;
@@ -1886,10 +1899,10 @@ void P2OS::ToggleActArrayPower (unsigned char value, bool lock)
   SendReceive (&packet, lock);
 }
 
-void P2OS::SetActArrayJointSpeed (int joint, double speed)
+void FLASH::SetActArrayJointSpeed (int joint, double speed)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command[0] = ARM_SPEED;
   command[1] = ARGINT;
@@ -1905,7 +1918,7 @@ void P2OS::SetActArrayJointSpeed (int joint, double speed)
 
 
 int
-P2OS::ProcessMessage(MessageQueue * resp_queue,
+FLASH::ProcessMessage(MessageQueue * resp_queue,
                      player_msghdr * hdr,
                      void * data)
 {
@@ -1919,7 +1932,7 @@ P2OS::ProcessMessage(MessageQueue * resp_queue,
 }
 
 int
-P2OS::HandleConfig(MessageQueue* resp_queue,
+FLASH::HandleConfig(MessageQueue* resp_queue,
                    player_msghdr * hdr,
                    void * data)
 {
@@ -1939,12 +1952,12 @@ P2OS::HandleConfig(MessageQueue* resp_queue,
     player_position2d_set_odom_req_t* set_odom_req =
             (player_position2d_set_odom_req_t*)data;
 
-    this->sippacket->x_offset = ((int)rint(set_odom_req->pose.px*1e3)) -
-            this->sippacket->xpos;
-    this->sippacket->y_offset = ((int)rint(set_odom_req->pose.py*1e3)) -
-            this->sippacket->ypos;
-    this->sippacket->angle_offset = ((int)rint(RTOD(set_odom_req->pose.pa))) -
-            this->sippacket->angle;
+    this->flashsippacket->x_offset = ((int)rint(set_odom_req->pose.px*1e3)) -
+            this->flashsippacket->xpos;
+    this->flashsippacket->y_offset = ((int)rint(set_odom_req->pose.py*1e3)) -
+            this->flashsippacket->ypos;
+    this->flashsippacket->angle_offset = ((int)rint(RTOD(set_odom_req->pose.pa))) -
+            this->flashsippacket->angle;
 
     this->Publish(this->position_id, resp_queue,
                   PLAYER_MSGTYPE_RESP_ACK, PLAYER_POSITION2D_REQ_SET_ODOM);
@@ -2005,8 +2018,11 @@ P2OS::HandleConfig(MessageQueue* resp_queue,
     geom.pose.py = 0.0;
     geom.pose.pa = 0.0;
     // get dimensions from the parameter table
-    geom.size.sl = PlayerRobotParams[param_idx].RobotLength / 1e3;
-    geom.size.sw = PlayerRobotParams[param_idx].RobotWidth / 1e3;
+    //geom.size.sl = PlayerRobotParams[param_idx].RobotLength / 1e3;
+    //geom.size.sw = PlayerRobotParams[param_idx].RobotWidth / 1e3;
+    geom.size.sl = 0.32;
+    geom.size.sw = 0.64;
+
 
     this->Publish(this->position_id, resp_queue,
                   PLAYER_MSGTYPE_RESP_ACK,
@@ -2126,7 +2142,7 @@ P2OS::HandleConfig(MessageQueue* resp_queue,
     player_blobfinder_imager_config_t* imager_config =
             (player_blobfinder_imager_config_t*)data;
 
-    P2OSPacket cam_packet;
+    FLASHPacket cam_packet;
     unsigned char cam_command[50];
     int np;
 
@@ -2195,23 +2211,23 @@ P2OS::HandleConfig(MessageQueue* resp_queue,
   else if(Message::MatchMessage(hdr,PLAYER_MSGTYPE_REQ,PLAYER_ACTARRAY_GET_GEOM_REQ,this->actarray_id))
   {
     // First ask for an ARMINFOpac (because we need to get any updates to speed settings)
-    P2OSPacket aaPacket;
+    FLASHPacket aaPacket;
     unsigned char aaCmd = ARM_INFO;
     aaPacket.Build (&aaCmd, 1);
     SendReceive (&aaPacket);
 
     player_actarray_geom_t aaGeom;
 
-    aaGeom.actuators_count = sippacket->armNumJoints;
+    aaGeom.actuators_count = flashsippacket->armNumJoints;
 
-    for (int ii = 0; ii < sippacket->armNumJoints; ii++)
+    for (int ii = 0; ii < flashsippacket->armNumJoints; ii++)
     {
       aaGeom.actuators[ii].type = PLAYER_ACTARRAY_TYPE_ROTARY;
-      aaGeom.actuators[ii].min = static_cast<float> (TicksToRadians (ii, sippacket->armJoints[ii].min));
-      aaGeom.actuators[ii].centre = static_cast<float> (TicksToRadians (ii, sippacket->armJoints[ii].centre));
-      aaGeom.actuators[ii].max = static_cast<float> (TicksToRadians (ii, sippacket->armJoints[ii].max));
-      aaGeom.actuators[ii].home = static_cast<float> (TicksToRadians (ii, sippacket->armJoints[ii].home));
-      aaGeom.actuators[ii].config_speed = static_cast<float> (SecsPerTicktoRadsPerSec (ii, sippacket->armJoints[ii].speed));
+      aaGeom.actuators[ii].min = static_cast<float> (TicksToRadians (ii, flashsippacket->armJoints[ii].min));
+      aaGeom.actuators[ii].centre = static_cast<float> (TicksToRadians (ii, flashsippacket->armJoints[ii].centre));
+      aaGeom.actuators[ii].max = static_cast<float> (TicksToRadians (ii, flashsippacket->armJoints[ii].max));
+      aaGeom.actuators[ii].home = static_cast<float> (TicksToRadians (ii, flashsippacket->armJoints[ii].home));
+      aaGeom.actuators[ii].config_speed = static_cast<float> (SecsPerTicktoRadsPerSec (ii, flashsippacket->armJoints[ii].speed));
       aaGeom.actuators[ii].hasbrakes = 0;
     }
 
@@ -2291,15 +2307,15 @@ P2OS::HandleConfig(MessageQueue* resp_queue,
   }
   else
   {
-    PLAYER_WARN("unknown config request to p2os driver");
+    PLAYER_WARN("unknown config request to flash driver");
     return(-1);
   }
 }
 
-void P2OS::SendPulse (void)
+void FLASH::SendPulse (void)
 {
   unsigned char command;
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command = PULSE;
   packet.Build(&command, 1);
@@ -2307,14 +2323,14 @@ void P2OS::SendPulse (void)
 }
 
 void
-P2OS::HandlePositionCommand(player_position2d_cmd_vel_t position_cmd)
+FLASH::HandlePositionCommand(player_position2d_cmd_vel_t position_cmd)
 {
   int speedDemand, turnRateDemand;
   double leftvel, rightvel;
   double rotational_term;
   unsigned short absspeedDemand, absturnRateDemand;
   unsigned char motorcommand[4];
-  P2OSPacket motorpacket;
+  FLASHPacket motorpacket;
 
   speedDemand = (int)rint(position_cmd.vel.px * 1e3);
   turnRateDemand = (int)rint(RTOD(position_cmd.vel.pa));
@@ -2453,11 +2469,11 @@ P2OS::HandlePositionCommand(player_position2d_cmd_vel_t position_cmd)
 }
 
 void
-P2OS::HandleGripperCommand(player_gripper_cmd_t gripper_cmd)
+FLASH::HandleGripperCommand(player_gripper_cmd_t gripper_cmd)
 {
   bool newgrippercommand;
   unsigned char gripcommand[4];
-  P2OSPacket grippacket;
+  FLASHPacket grippacket;
 
   if(!this->sent_gripper_cmd)
     newgrippercommand = true;
@@ -2499,10 +2515,10 @@ P2OS::HandleGripperCommand(player_gripper_cmd_t gripper_cmd)
 }
 
 void
-P2OS::HandleSoundCommand(player_sound_cmd_t sound_cmd)
+FLASH::HandleSoundCommand(player_sound_cmd_t sound_cmd)
 {
   unsigned char soundcommand[4];
-  P2OSPacket soundpacket;
+  FLASHPacket soundpacket;
   unsigned short soundindex;
 
   soundindex = ntohs(sound_cmd.index);
@@ -2521,10 +2537,10 @@ P2OS::HandleSoundCommand(player_sound_cmd_t sound_cmd)
   }
 }
 
-void P2OS::HandleActArrayPosCmd (player_actarray_position_cmd_t cmd)
+void FLASH::HandleActArrayPosCmd (player_actarray_position_cmd_t cmd)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   if (!last_actarray_cmd_was_pos || (last_actarray_cmd_was_pos &&
        (cmd.joint != last_actarray_pos_cmd.joint || cmd.position != last_actarray_pos_cmd.position)))
@@ -2535,14 +2551,14 @@ void P2OS::HandleActArrayPosCmd (player_actarray_position_cmd_t cmd)
     command[3] = static_cast<unsigned char> (cmd.joint) + 1;
     packet.Build(command, 4);
     SendReceive(&packet);
-    sippacket->armJointTargetPos[static_cast<unsigned char> (cmd.joint)] = command[2];
+    flashsippacket->armJointTargetPos[static_cast<unsigned char> (cmd.joint)] = command[2];
   }
 }
 
-void P2OS::HandleActArrayHomeCmd (player_actarray_home_cmd_t cmd)
+void FLASH::HandleActArrayHomeCmd (player_actarray_home_cmd_t cmd)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   if (last_actarray_cmd_was_pos || (!last_actarray_cmd_was_pos && (cmd.joint != last_actarray_home_cmd.joint)))
   {
@@ -2555,10 +2571,10 @@ void P2OS::HandleActArrayHomeCmd (player_actarray_home_cmd_t cmd)
   }
 }
 
-void P2OS::HandleLimbHomeCmd (void)
+void FLASH::HandleLimbHomeCmd (void)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command[0] = ARM_HOME;
   command[1] = ARGINT;
@@ -2568,10 +2584,10 @@ void P2OS::HandleLimbHomeCmd (void)
   SendReceive(&packet);
 }
 
-void P2OS::HandleLimbStopCmd (void)
+void FLASH::HandleLimbStopCmd (void)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   command[0] = ARM_STOP;
   command[1] = ARGINT;
@@ -2585,10 +2601,10 @@ void P2OS::HandleLimbStopCmd (void)
   }
 }
 
-void P2OS::HandleLimbSetPoseCmd (player_limb_setpose_cmd_t cmd)
+void FLASH::HandleLimbSetPoseCmd (player_limb_setpose_cmd_t cmd)
 {
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
   EndEffector pose;
 
 //   printf ("Moving limb to pose (%f, %f, %f), (%f, %f, %f), (%f, %f, %f)\n", cmd.position.px, cmd.position.py, cmd.position.pz, cmd.approach.px, cmd.approach.py, cmd.approach.pz, cmd.orientation.px, cmd.orientation.py, cmd.orientation.pz);
@@ -2629,11 +2645,11 @@ void P2OS::HandleLimbSetPoseCmd (player_limb_setpose_cmd_t cmd)
 }
 
 // NOTE: Not functional
-void P2OS::HandleLimbSetPositionCmd (player_limb_setposition_cmd_t cmd)
+void FLASH::HandleLimbSetPositionCmd (player_limb_setposition_cmd_t cmd)
 {
   EndEffector pose;
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   pose.p.x = cmd.position.px - armOffsetX;
   pose.p.y = -(cmd.position.py - armOffsetY);
@@ -2666,11 +2682,11 @@ void P2OS::HandleLimbSetPositionCmd (player_limb_setposition_cmd_t cmd)
 }
 
 // NOTE: Not functional
-void P2OS::HandleLimbVecMoveCmd (player_limb_vecmove_cmd_t cmd)
+void FLASH::HandleLimbVecMoveCmd (player_limb_vecmove_cmd_t cmd)
 {
   EndEffector pose;
   unsigned char command[4];
-  P2OSPacket packet;
+  FLASHPacket packet;
 
   // To do a vector move, calculate a new position that is offset from the current
   // by the length of the desired move in the direction of the desired vector.
@@ -2720,7 +2736,7 @@ void P2OS::HandleLimbVecMoveCmd (player_limb_vecmove_cmd_t cmd)
 }
 
 int
-P2OS::HandleCommand(player_msghdr * hdr, void* data)
+FLASH::HandleCommand(player_msghdr * hdr, void* data)
 {
   int retVal = -1;
   struct timeval timeVal;

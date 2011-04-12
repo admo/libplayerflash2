@@ -22,19 +22,19 @@
 
 /*
  * $Id: packet.cc,v 1.5 2006/03/02 21:39:28 reed Exp $
- *   part of the P2OS parser.  this class has methods for building,
- *   printing, sending and receiving P2OS packets.
+ *   part of the FLASH parser.  this class has methods for building,
+ *   printing, sending and receiving FLASH packets.
  *
  */
 
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
-#include <packet.h>
+#include "packet.h"
 #include <unistd.h>
-#include <stdlib.h> /* for exit() */
+#include <cstdlib> /* for exit() */
 
-void P2OSPacket::Print() {
+void FLASHPacket::Print() {
   if (packet) {
     printf("\"");
     for(int i=0;i<size;i++) {
@@ -44,7 +44,7 @@ void P2OSPacket::Print() {
   }
 }
 
-void P2OSPacket::PrintHex() {
+void FLASHPacket::PrintHex() {
   if (packet) {
     printf("\"");
     for(int i=0;i<size;i++) {
@@ -55,7 +55,7 @@ void P2OSPacket::PrintHex() {
 }
 
 
-bool P2OSPacket::Check() {
+bool FLASHPacket::Check() {
   short chksum;
   chksum = CalcChkSum();
 
@@ -66,7 +66,7 @@ bool P2OSPacket::Check() {
   return(false);
 }
 
-int P2OSPacket::CalcChkSum() {
+int FLASHPacket::CalcChkSum() {
   unsigned char *buffer = &packet[3];
   int c = 0;
   int n;
@@ -84,7 +84,7 @@ int P2OSPacket::CalcChkSum() {
   return(c);
 }
 
-int P2OSPacket::Receive( int fd ) 
+int FLASHPacket::Receive( int fd ) 
 {
   unsigned char prefix[3];
   //int skipped=0;
@@ -104,7 +104,7 @@ int P2OSPacket::Receive( int fd )
       {
         if ( (cnt+=read( fd, &prefix[2], 1 )) < 0 ) 
         {
-          perror("Error reading packet header from robot connection: P2OSPacket():Receive():read():");
+          perror("Error reading packet header from robot connection: FLASHPacket():Receive():read():");
           return(1);
         }
       }
@@ -125,7 +125,7 @@ int P2OSPacket::Receive( int fd )
     {
       if ( (cnt+=read( fd, &packet[3+cnt],  prefix[2]-cnt )) < 0 ) 
       {
-        perror("Error reading packet body from robot connection: P2OSPacket():Receive():read():");
+        perror("Error reading packet body from robot connection: FLASHPacket():Receive():read():");
         return(1);
       }  
     }
@@ -133,7 +133,7 @@ int P2OSPacket::Receive( int fd )
   return(0);
 }
 
-int P2OSPacket::Build( unsigned char *data, unsigned char datasize ) {
+int FLASHPacket::Build( unsigned char *data, unsigned char datasize ) {
   short chksum;
 
   size = datasize + 5;
@@ -143,7 +143,7 @@ int P2OSPacket::Build( unsigned char *data, unsigned char datasize ) {
   packet[1]=0xFB;
   
   if ( size > 198 ) {
-    puts("Packet to P2OS can't be larger than 200 bytes");
+    puts("Packet to FLASH can't be larger than 200 bytes");
     return(1);
   }
   packet[2] = datasize + 2;
@@ -161,7 +161,7 @@ int P2OSPacket::Build( unsigned char *data, unsigned char datasize ) {
   return(0);
 }
 
-int P2OSPacket::Send( int fd) 
+int FLASHPacket::Send( int fd) 
 {
   int cnt=0;
   

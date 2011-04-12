@@ -1,7 +1,7 @@
 /*
  *  Player - One Hell of a Robot Server
  *  Copyright (C) 2000
- *     Brian Gerkey, Kasper Stoy, Richard Vaughan, & Andrew Howard
+ *     Brian Gerkey, Kasper Stoy, Richard Vaughan & Andrew Howard
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -21,22 +21,21 @@
  */
 
 /*
- * $Id: p2os.h,v 1.30 2006/04/04 21:31:37 gbiggs Exp $
+ * $Id: flash.h,v 1.30 2006/04/04 21:31:37 gbiggs Exp $
  *
- *   the P2OS device.  it's the parent device for all the P2 'sub-devices',
+ *   the FLASH device.  it's the parent device for all the P2 'sub-devices',
  *   like gripper, position, sonar, etc.  there's a thread here that
- *   actually interacts with P2OS via the serial line.  the other
+ *   actually interacts with FLASH via the serial line.  the other
  *   "devices" communicate with this thread by putting into and getting
  *   data out of shared buffers.
  */
-#ifndef _P2OSDEVICE_H
-#define _P2OSDEVICE_H
+#ifndef _FLASHDEVICE_H
+#define _FLASHDEVICE_H
 
 #include <pthread.h>
 #include <sys/time.h>
 
 #include <libplayercore/playercore.h>
-#include <replace/replace.h>
 
 #include "packet.h"
 #include "robot_params.h"
@@ -48,13 +47,13 @@
 /*
  * Apparently, newer kernel require a large value (200000) here.  It only
  * makes the initialization phase take a bit longer, and doesn't have any
- * impact on the speed at which packets are received from P2OS
+ * impact on the speed at which packets are received from FLASH
  */
-#define P2OS_CYCLETIME_USEC 200000
+#define FLASH_CYCLETIME_USEC 200000
 
-/* p2os constants */
+/* flash constants */
 
-#define P2OS_NOMINAL_VOLTAGE 12.0
+#define FLASH_NOMINAL_VOLTAGE 12.0
 
 /* Command numbers */
 #define SYNC0 0
@@ -81,12 +80,12 @@
 #define BUMP_STALL 44
 #define JOYDRIVE 47
 #define GYRO 58         // Added in AROS 1.8
-#define ROTKP 82        // Added in P2OS1.M
-#define ROTKV 83        // Added in P2OS1.M
-#define ROTKI 84        // Added in P2OS1.M
-#define TRANSKP 85      // Added in P2OS1.M
-#define TRANSKV 86      // Added in P2OS1.M
-#define TRANSKI 87      // Added in P2OS1.M
+#define ROTKP 82        // Added in FLASH1.M
+#define ROTKV 83        // Added in FLASH1.M
+#define ROTKI 84        // Added in FLASH1.M
+#define TRANSKP 85      // Added in FLASH1.M
+#define TRANSKV 86      // Added in FLASH1.M
+#define TRANSKI 87      // Added in FLASH1.M
 #define TTY3 66		// Added in AmigOS 1.3
 #define GETAUX2 67	// Added in AmigOS 1.3
 #define ARM_INFO 70
@@ -104,7 +103,7 @@
 #define SOUND 90
 #define PLAYLIST 91
 
-/* Server Information Packet (SIP) types */
+/* Server Information Packet (FLASHSIP) types */
 #define STATUSSTOPPED	0x32
 #define STATUSMOVING	0x33
 #define	ENCODER		0x90
@@ -139,11 +138,11 @@
 #define CMUCAM_MESSAGE_LEN	10
 
 /* conection stuff */
-#define DEFAULT_P2OS_PORT "/dev/ttyS0"
-#define DEFAULT_P2OS_TCP_REMOTE_HOST "localhost"
-#define DEFAULT_P2OS_TCP_REMOTE_PORT 8101
+#define DEFAULT_FLASH_PORT "/dev/ttyS0"
+#define DEFAULT_FLASH_TCP_REMOTE_HOST "localhost"
+#define DEFAULT_FLASH_TCP_REMOTE_PORT 8101
 
-typedef struct player_p2os_data
+typedef struct player_flash_data
 {
   player_position2d_data_t position;
   player_sonar_data_t sonar;
@@ -156,22 +155,22 @@ typedef struct player_p2os_data
   player_position2d_data_t compass;
   player_position2d_data_t gyro;
   player_actarray_data_t actarray;
-} __attribute__ ((packed)) player_p2os_data_t;
+} __attribute__ ((packed)) player_flash_data_t;
 
 // this is here because we need the above typedef's before including it.
-#include <sip.h>
+#include "flashsip.h"
 
 #include "kinecalc.h"
 
-class SIP;
+class FLASHSIP;
 
 // Forward declaration of the KineCalc_Base class declared in kinecalc_base.h
 //class KineCalc;
 
-class P2OS : public Driver
+class FLASH : public Driver
 {
   private:
-    player_p2os_data_t p2os_data;
+    player_flash_data_t flash_data;
 
     player_devaddr_t position_id;
     player_devaddr_t sonar_id;
@@ -207,9 +206,9 @@ class P2OS : public Driver
     int sonar_subscriptions;
     int actarray_subscriptions;
 
-    SIP* sippacket;
+    FLASHSIP* flashsippacket;
 
-    int SendReceive(P2OSPacket* pkt, bool publish_data=true);
+    int SendReceive(FLASHPacket* pkt, bool publish_data=true);
     void ResetRawPositions();
     /* toggle sonars on/off, according to val */
     void ToggleSonarPower(unsigned char val);
@@ -252,7 +251,7 @@ class P2OS : public Driver
 
     int param_idx;  // index in the RobotParams table for this robot
     int direct_wheel_vel_control; // false -> separate trans and rot vel
-    int psos_fd;               // p2os device file descriptor
+    int psos_fd;               // flash device file descriptor
     const char* psos_serial_port; // name of serial port device
     bool psos_use_tcp;    // use TCP port instead of serial port
     const char* psos_tcp_host;  // hostname to use if using TCP
@@ -282,8 +281,8 @@ class P2OS : public Driver
 
   public:
 
-    P2OS(ConfigFile* cf, int section);
-	~P2OS (void);
+    FLASH(ConfigFile* cf, int section);
+	~FLASH (void);
 
     virtual int Subscribe(player_devaddr_t id);
     virtual int Unsubscribe(player_devaddr_t id);
