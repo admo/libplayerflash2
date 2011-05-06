@@ -2014,14 +2014,17 @@ FLASH::HandleConfig(MessageQueue* resp_queue,
     // TODO: Figure out this rotation offset somehow; it's not
     //       given in the Saphira parameters.  For now, -0.1 is
     //       about right for a Pioneer 2DX.
-    geom.pose.px = -0.1;
+    if (!strcasecmp(PlayerRobotParams[param_idx].Subclass,"Flash"))
+      geom.pose.px=0;
+    else	
+      geom.pose.px = -0.1;
     geom.pose.py = 0.0;
     geom.pose.pa = 0.0;
     // get dimensions from the parameter table
-    //geom.size.sl = PlayerRobotParams[param_idx].RobotLength / 1e3;
-    //geom.size.sw = PlayerRobotParams[param_idx].RobotWidth / 1e3;
-    geom.size.sl = 0.32;
-    geom.size.sw = 0.64;
+    geom.size.sl = PlayerRobotParams[param_idx].RobotLength / 1e3;
+    geom.size.sw = PlayerRobotParams[param_idx].RobotWidth / 1e3;
+    //geom.size.sl = 0.32;
+    //geom.size.sw = 0.64;
 
 
     this->Publish(this->position_id, resp_queue,

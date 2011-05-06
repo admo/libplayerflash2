@@ -2047,6 +2047,59 @@ RobotParams_t psos1x_params =
   }
 };
 
+
+/* more info http://www.cas.kth.se/CURE/doc-cure-2.2.4/html/classCure_1_1Hal_1_1P2OSSerialInterface.html#a935a78a497235286344a70a47a5f3caa
+*/
+RobotParams_t flash_params =
+  {
+    0.001534,
+    "Pioneer",
+    0.0036,
+    1, // 0.485 or 1 not sure, SIP XPOS from P2OS internal representation to mm
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    "",
+    "",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    320,
+    0,
+    720,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    "Flash",
+    0,
+    0,
+    0,
+    0,
+    0,
+    20,
+    1
+  };
+
+
 RobotParams_t PlayerRobotParams[PLAYER_NUM_ROBOT_TYPES];
 
 void
@@ -2081,4 +2134,5 @@ initialize_robot_params(void)
   PlayerRobotParams[26] =  psos1m_params;
   PlayerRobotParams[27] =  psos1x_params;
   PlayerRobotParams[28] =  amigo_sh_params;
+  PlayerRobotParams[29] =  flash_params;
 }

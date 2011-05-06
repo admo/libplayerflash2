@@ -62,7 +62,7 @@
 
 void initialize_robot_params(void);
 
-#define PLAYER_NUM_ROBOT_TYPES 29
+#define PLAYER_NUM_ROBOT_TYPES 30
 
 
 typedef struct
